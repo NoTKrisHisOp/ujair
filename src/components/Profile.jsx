@@ -29,13 +29,14 @@ export default function Profile() {
   const [showSuccessMessage, setShowSuccessMessage] = useState(false);
   const navigate = useNavigate();
 
-  // Observe auth and set local user; routing guard handled in App.jsx
+  // Check auth
   useEffect(() => {
     const unsubscribe = auth.onAuthStateChanged((currentUser) => {
-      setUser(currentUser || null);
+      if (currentUser) setUser(currentUser);
+      else navigate("/login");
     });
     return () => unsubscribe();
-  }, []);
+  }, [navigate]);
 
   // Fetch user notes
   const fetchNotes = async () => {
@@ -132,21 +133,28 @@ export default function Profile() {
     }
   };
 
-  // Use shared Navbar search; no local override
+  // Search for users by name
+  const handleSearch = async (searchTerm) => {
+    if (!searchTerm.trim()) return;
+    try {
+      const q = query(
+        collection(db, "users"),
+        where("nameLower", "==", searchTerm.trim().toLowerCase())
+      );
+      const snapshot = await getDocs(q);
+      if (!snapshot.empty) {
+        const userData = { id: snapshot.docs[0].id, ...snapshot.docs[0].data() };
+        navigate(`/user/${userData.id}`);
+      } else {
+        alert("User not found");
+      }
+    } catch (error) {
+      console.error("Error searching for user:", error);
+      alert("Error searching for user");
+    }
+  };
 
-  if (!user) {
-    return (
-      <div className="min-h-screen bg-gray-50">
-        <Navbar />
-        <div className="max-w-4xl mx-auto px-4 py-16">
-          <div className="text-center">
-            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600 mx-auto mb-4"></div>
-            <p className="text-gray-600">Loading your profile...</p>
-          </div>
-        </div>
-      </div>
-    );
-  }
+  if (!user) return null;
 
   return (
     <div className="min-h-screen bg-gray-50">

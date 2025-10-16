@@ -10,44 +10,17 @@ export default function Search() {
   const navigate = useNavigate();
 
   const handleSearch = async () => {
-    const raw = searchName.trim();
-    const term = raw.toLowerCase();
+    const term = searchName.trim().toLowerCase();
     if (!term) return;
 
-    // Primary: case-insensitive by nameLower; emailLower when input looks like email
-    const isEmailLike = term.includes("@");
-    let q = isEmailLike
-      ? query(
-          collection(db, "users"),
-          where("emailLower", ">=", term),
-          where("emailLower", "<=", term + "\uf8ff")
-        )
-      : query(
-          collection(db, "users"),
-          where("nameLower", ">=", term),
-          where("nameLower", "<=", term + "\uf8ff")
-        );
+    const q = query(
+      collection(db, "users"),
+      where("nameLower", ">=", term),
+      where("nameLower", "<=", term + "\uf8ff")
+    );
 
-    let snapshot = await getDocs(q);
-    let users = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
-
-    // Fallbacks for legacy fields
-    if (users.length === 0 && !isEmailLike) {
-      q = query(
-        collection(db, "users"),
-        where("name", ">=", raw),
-        where("name", "<=", raw + "\uf8ff")
-      );
-      snapshot = await getDocs(q);
-      users = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
-    }
-
-    if (users.length === 0 && isEmailLike) {
-      q = query(collection(db, "users"), where("email", "==", raw));
-      snapshot = await getDocs(q);
-      users = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
-    }
-
+    const snapshot = await getDocs(q);
+    const users = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
     setResults(users);
   };
 
@@ -75,7 +48,7 @@ export default function Search() {
           <div
             key={user.id}
             className="p-2 border rounded cursor-pointer hover:bg-gray-100"
-            onClick={() => navigate(`/user/${user.id}`)}
+            onClick={() => navigate(`/profile/${user.id}`)}
           >
             {user.name}
           </div>

@@ -1,38 +1,51 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import Navbar from './Navbar';
 import { db, auth } from '../firebase';
 import { collection, addDoc, onSnapshot, query, orderBy, where, serverTimestamp, getDocs, deleteDoc, doc } from 'firebase/firestore';
 
 function Chat() {
   const [messages, setMessages] = useState([]);
+  const [pendingByKey, setPendingByKey] = useState({});
   const [newMessage, setNewMessage] = useState('');
   const [users, setUsers] = useState([]);
   const [recipient, setRecipient] = useState('');
   const [conversations, setConversations] = useState([]);
+  const [usersLoading, setUsersLoading] = useState(false);
+  const [messagesLoading, setMessagesLoading] = useState(false);
+  const [currentUser, setCurrentUser] = useState(() => auth.currentUser || null);
 
-  const currentUserId = auth.currentUser?.uid;
+  // Stay reactive to auth changes
+  useEffect(() => {
+    const unsubscribe = auth.onAuthStateChanged((u) => setCurrentUser(u));
+    return () => unsubscribe();
+  }, []);
+
+  const currentUserId = currentUser?.uid;
   const selectedUser = useMemo(() => users.find(u => u.id === recipient), [users, recipient]);
+  const selectedUserUid = useMemo(() => (selectedUser?.uid || selectedUser?.id || ''), [selectedUser]);
   const conversationKey = useMemo(() => {
-    if (!currentUserId || !selectedUser?.uid) return '';
+    if (!currentUserId || !selectedUserUid) return '';
     const a = currentUserId;
-    const b = selectedUser.uid;
+    const b = selectedUserUid;
     return a < b ? `${a}_${b}` : `${b}_${a}`;
-  }, [currentUserId, selectedUser]);
+  }, [currentUserId, selectedUserUid]);
 
   useEffect(() => {
     const fetchUsers = async () => {
-      const usersRef = collection(db, 'users');
-      // Remove current user from the list
-      const querySnapshot = await getDocs(usersRef);
-      const usersList = querySnapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data(),
-      }));
-      setUsers(usersList.filter(user => user.uid !== auth.currentUser.uid));
+      try {
+        setUsersLoading(true);
+        const usersRef = collection(db, 'users');
+        const querySnapshot = await getDocs(usersRef);
+        const usersList = querySnapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+        setUsers(usersList.filter(u => !currentUserId || u.uid !== currentUserId));
+      } catch (e) {
+        console.error('Error loading users:', e);
+      } finally {
+        setUsersLoading(false);
+      }
     };
 
     fetchUsers();
-  }, []);
+  }, [currentUserId]);
 
   // Build conversations list (dedup by conversationKey, show last message)
   useEffect(() => {
@@ -51,7 +64,7 @@ function Chat() {
         if (seen.has(m.conversationKey)) continue;
         seen.add(m.conversationKey);
         const otherId = (m.participants || []).find((p) => p !== currentUserId);
-        const otherUser = users.find(u => u.uid === otherId);
+        const otherUser = users.find(u => (u.uid || u.id) === otherId);
         convs.push({
           conversationKey: m.conversationKey,
           otherUserId: otherId,
@@ -81,9 +94,22 @@ function Chat() {
       orderBy('createdAt')
     );
 
+    setMessagesLoading(true);
     const unsubscribe = onSnapshot(q, (snapshot) => {
-      const msgs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      setMessages(msgs);
+      const docs = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+      // Reconcile pending optimistic messages by clientId
+      setPendingByKey((current) => {
+        const pendingForKey = current[conversationKey] || [];
+        const serverClientIds = new Set(docs.map(m => m.clientId).filter(Boolean));
+        const stillPending = pendingForKey.filter(m => !serverClientIds.has(m.clientId));
+        // Merge server messages with any still-pending optimistic ones
+        setMessages([...docs, ...stillPending]);
+        return { ...current, [conversationKey]: stillPending };
+      });
+      setMessagesLoading(false);
+    }, (err) => {
+      console.error('Error subscribing to messages:', err);
+      setMessagesLoading(false);
     });
 
     return () => unsubscribe();
@@ -107,22 +133,49 @@ function Chat() {
     }
 
     try {
-      if (!selectedUser?.uid || !conversationKey) {
+      if (!currentUserId) {
+        alert('Please login to send messages.');
+        return;
+      }
+      if (!selectedUserUid || !conversationKey) {
         alert('Please select a user to chat with.');
         return;
       }
 
+      // Optimistic message
+      const clientId = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+      const optimistic = {
+        id: `temp:${clientId}`,
+        clientId,
+        text: newMessage.trim(),
+        createdAt: { toDate: () => new Date() },
+        conversationKey,
+        participants: [currentUserId, selectedUserUid],
+        senderId: currentUserId,
+        recipientId: selectedUserUid,
+        senderDisplayName: currentUser?.displayName || 'User',
+        senderPhotoURL: currentUser?.photoURL || '',
+        status: 'sending',
+      };
+      setPendingByKey((current) => {
+        const arr = current[conversationKey] || [];
+        return { ...current, [conversationKey]: [...arr, optimistic] };
+      });
+      setMessages((curr) => [...curr, optimistic]);
+
+      // Persist to Firestore
       const messagesRef = collection(db, 'messages');
       await addDoc(messagesRef, {
-        text: newMessage.trim(),
+        text: optimistic.text,
         createdAt: serverTimestamp(),
         conversationKey,
-        participants: [currentUserId, selectedUser.uid],
+        participants: [currentUserId, selectedUserUid],
         senderId: currentUserId,
-        recipientId: selectedUser.uid,
-        senderDisplayName: auth.currentUser.displayName || 'User',
-        senderPhotoURL: auth.currentUser.photoURL || '',
+        recipientId: selectedUserUid,
+        senderDisplayName: currentUser?.displayName || 'User',
+        senderPhotoURL: currentUser?.photoURL || '',
         status: 'sent',
+        clientId,
       });
 
       setNewMessage('');
@@ -140,23 +193,28 @@ function Chat() {
     if (!ok) return;
     const messagesRef = collection(db, 'messages');
     const q = query(messagesRef, where('conversationKey', '==', conversationKey));
-    const snap = await getDocs(q);
-    await Promise.all(snap.docs.map(d => deleteDoc(doc(db, 'messages', d.id))));
+    try {
+      const snap = await getDocs(q);
+      await Promise.all(snap.docs.map(d => deleteDoc(doc(db, 'messages', d.id))));
+    } catch (e) {
+      console.error('Error deleting conversation:', e);
+      alert('Failed to delete conversation.');
+    }
   };
 
   return (
-    <div className="flex h-screen flex-col">
-      {/* Global Navbar with shared search */}
-      <Navbar />
-      <div className="flex flex-1">
+    <div className="flex h-screen">
       {/* Sidebar: conversations */}
       <div className="w-72 border-r bg-gray-50 p-3 overflow-y-auto">
         <div className="text-xs font-semibold text-gray-500 mb-2">Conversations</div>
         <div className="space-y-1">
+          {conversations.length === 0 && (
+            <div className="text-xs text-gray-500">No conversations yet</div>
+          )}
           {conversations.map(c => (
             <button
               key={c.conversationKey}
-              onClick={() => setRecipient((users.find(u => u.uid === c.otherUserId)?.id) || '')}
+              onClick={() => setRecipient((users.find(u => (u.uid || u.id) === c.otherUserId)?.id) || '')}
               className={`w-full text-left px-3 py-2 rounded hover:bg-gray-100 ${selectedUser?.uid === c.otherUserId ? 'bg-gray-100' : ''}`}
             >
               <div className="text-sm font-medium text-gray-900">{c.otherName}</div>
@@ -173,7 +231,9 @@ function Chat() {
             className="w-full shadow appearance-none border rounded py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline"
           >
             <option value="">Select a user…</option>
-            {users.map(user => (
+            {usersLoading && <option disabled>Loading users…</option>}
+            {!usersLoading && users.length === 0 && <option disabled>No other users</option>}
+            {!usersLoading && users.map(user => (
               <option key={user.id} value={user.id}>
                 {user.displayName || user.name || user.email}
               </option>
@@ -196,8 +256,13 @@ function Chat() {
         <div className="flex-1 overflow-y-auto p-4 bg-white">
         {!recipient ? (
           <div className="h-full flex items-center justify-center text-gray-500">Select someone to start chatting</div>
+        ) : messagesLoading ? (
+          <div className="h-full flex items-center justify-center text-gray-500">Loading messages…</div>
         ) : (
           <div className="space-y-2">
+            {messages.length === 0 && (
+              <div className="h-full flex items-center justify-center text-gray-400">No messages yet. Say hi!</div>
+            )}
             {messages.map(message => {
               const isMine = message.senderId === currentUserId;
               const ts = message.createdAt?.toDate ? message.createdAt.toDate() : null;
@@ -227,19 +292,18 @@ function Chat() {
               value={newMessage}
               onChange={handleNewMessageChange}
               placeholder={recipient ? 'Type a message…' : 'Select a user to chat'}
-              disabled={!recipient}
+              disabled={!recipient || !currentUserId}
               className="flex-1 border rounded-md py-2 px-3 text-gray-700 focus:outline-none disabled:bg-gray-100"
             />
             <button
               type="submit"
-              disabled={!recipient || newMessage.trim() === ''}
+              disabled={!recipient || newMessage.trim() === '' || !currentUserId}
               className="btn btn-primary py-2 px-4 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               Send
             </button>
           </form>
         </div>
-      </div>
       </div>
     </div>
   );
