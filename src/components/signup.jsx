@@ -33,7 +33,9 @@ export default function Signup() {
       await setDoc(doc(db, "users", user.uid), {
         uid: user.uid,
         name: name.trim(),
+        nameLower: name.trim().toLowerCase(),
         email,
+        emailLower: email.toLowerCase(),
         createdAt: serverTimestamp(),
       });
 
@@ -66,7 +68,9 @@ export default function Signup() {
         await setDoc(docRef, {
           uid: user.uid,
           name: user.displayName || "No Name",
+          nameLower: (user.displayName || "No Name").toLowerCase(),
           email: user.email,
+          emailLower: (user.email || "").toLowerCase(),
           createdAt: serverTimestamp(),
         });
       }

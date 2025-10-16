@@ -18,7 +18,7 @@ export default function Home() {
     try {
       const q = query(
         collection(db, "users"),
-        where("name", "==", searchQuery.trim())
+        where("nameLower", "==", searchQuery.trim().toLowerCase())
       );
       const snapshot = await getDocs(q);
       if (!snapshot.empty) {

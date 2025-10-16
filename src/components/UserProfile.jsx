@@ -1,7 +1,7 @@
 // src/components/UserProfile.jsx
 import { useState, useEffect } from "react";
 import { db, storage, auth } from "../firebase";
-import { collection, query, where, getDocs, addDoc, deleteDoc, doc, serverTimestamp, onSnapshot } from "firebase/firestore";
+import { collection, query, where, getDocs, addDoc, deleteDoc, doc, serverTimestamp, onSnapshot, setDoc } from "firebase/firestore";
 import { useParams, Link } from "react-router-dom";
 import Navbar from "./Navbar";
 
@@ -132,27 +132,19 @@ export default function UserProfile() {
     setFollowLoading(true);
     try {
       if (isFollowing) {
-        // Unfollow: Find and delete the follow document
-        const followQuery = query(
-          collection(db, "follows"),
-          where("followerId", "==", currentUser.uid),
-          where("followingId", "==", userId)
-        );
-        const followSnapshot = await getDocs(followQuery);
-        
-        if (!followSnapshot.empty) {
-          await deleteDoc(doc(db, "follows", followSnapshot.docs[0].id));
-          // Instant UI updates for better user experience
-          setIsFollowing(false);
-          setFollowersCount(prev => prev - 1);
-          setShowFollowMessage(true);
-          setHighlightFollowers(true);
-          setTimeout(() => setShowFollowMessage(false), 3000);
-          setTimeout(() => setHighlightFollowers(false), 2000);
-        }
+        // Unfollow using deterministic doc id
+        const followDocId = `${currentUser.uid}_${userId}`;
+        await deleteDoc(doc(db, "follows", followDocId));
+        setIsFollowing(false);
+        setFollowersCount(prev => Math.max(0, prev - 1));
+        setShowFollowMessage(true);
+        setHighlightFollowers(true);
+        setTimeout(() => setShowFollowMessage(false), 3000);
+        setTimeout(() => setHighlightFollowers(false), 2000);
       } else {
-        // Follow: Create new follow document
-        await addDoc(collection(db, "follows"), {
+        // Follow: Create/overwrite deterministic follow document
+        const followDocId = `${currentUser.uid}_${userId}`;
+        await setDoc(doc(db, "follows", followDocId), {
           followerId: currentUser.uid,
           followingId: userId,
           createdAt: serverTimestamp(),
@@ -167,6 +159,9 @@ export default function UserProfile() {
       }
     } catch (error) {
       console.error("Error handling follow:", error);
+      const code = error?.code || "unknown";
+      const msg = error?.message || String(error);
+      alert(`Follow action failed (code: ${code}).\n${msg}`);
     } finally {
       setFollowLoading(false);
     }

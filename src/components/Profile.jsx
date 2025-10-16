@@ -139,7 +139,7 @@ export default function Profile() {
     try {
       const q = query(
         collection(db, "users"),
-        where("name", "==", searchTerm.trim())
+        where("nameLower", "==", searchTerm.trim().toLowerCase())
       );
       const snapshot = await getDocs(q);
       if (!snapshot.empty) {

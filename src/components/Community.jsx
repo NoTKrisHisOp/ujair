@@ -233,8 +233,15 @@ export default function Community() {
   };
 
   const handleCreateGroup = async () => {
-    if (!groupName.trim() || !groupDescription.trim()) return;
-    
+    if (!groupName.trim() || !groupDescription.trim()) {
+      alert("Please enter group name and description.");
+      return;
+    }
+    if (!user || !user.uid) {
+      alert("You must be logged in to create a group.");
+      return;
+    }
+
     try {
       await addDoc(collection(db, "studyGroups"), {
         name: groupName.trim(),
@@ -255,7 +262,9 @@ export default function Community() {
       alert("Study group created successfully!");
     } catch (error) {
       console.error("Error creating group:", error);
-      alert("Error creating group. Please try again.");
+      const code = error?.code || "unknown";
+      const msg = error?.message || String(error);
+      alert(`Error creating group (code: ${code}).\n${msg}`);
     }
   };
 
@@ -304,15 +313,20 @@ export default function Community() {
     
     setInviteLoading(true);
     try {
-      // Find user by email
-      const userQuery = query(collection(db, "users"), where("email", "==", inviteEmail.trim()));
-      const userSnapshot = await getDocs(userQuery);
-      
+      // Find user by email (prefer emailLower; fallback to email for older accounts)
+      const emailLc = inviteEmail.trim().toLowerCase();
+      let userSnapshot = await getDocs(
+        query(collection(db, "users"), where("emailLower", "==", emailLc))
+      );
+      if (userSnapshot.empty) {
+        userSnapshot = await getDocs(
+          query(collection(db, "users"), where("email", "==", inviteEmail.trim()))
+        );
+      }
       if (userSnapshot.empty) {
         alert("User not found with this email address.");
         return;
       }
-      
       const targetUser = userSnapshot.docs[0].data();
       const groupRef = doc(db, "studyGroups", selectedGroup.id);
       

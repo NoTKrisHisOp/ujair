@@ -47,9 +47,14 @@ export default function Login() {
       const docSnap = await getDoc(docRef);
 
       if (!docSnap.exists()) {
+        const displayName = user.displayName || "No Name";
+        const emailAddr = user.email || "";
         await setDoc(docRef, {
-          name: user.displayName,
-          email: user.email,
+          uid: user.uid,
+          name: displayName,
+          nameLower: displayName.toLowerCase(),
+          email: emailAddr,
+          emailLower: emailAddr.toLowerCase(),
           createdAt: serverTimestamp(),
         });
       }

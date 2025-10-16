@@ -10,12 +10,13 @@ export default function Search() {
   const navigate = useNavigate();
 
   const handleSearch = async () => {
-    if (!searchName) return;
+    const term = searchName.trim().toLowerCase();
+    if (!term) return;
 
     const q = query(
       collection(db, "users"),
-      where("name", ">=", searchName),
-      where("name", "<=", searchName + "\uf8ff")
+      where("nameLower", ">=", term),
+      where("nameLower", "<=", term + "\uf8ff")
     );
 
     const snapshot = await getDocs(q);
@@ -39,7 +40,6 @@ export default function Search() {
           className="btn btn-primary px-4 py-2"
         >
           Search
-          Search
         </button>
       </div>
 
@@ -53,6 +53,9 @@ export default function Search() {
             {user.name}
           </div>
         ))}
+        {results.length === 0 && searchName.trim() && (
+          <div className="text-sm text-gray-500">No users found</div>
+        )}
       </div>
     </div>
   );
