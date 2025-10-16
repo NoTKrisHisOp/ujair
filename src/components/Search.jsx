@@ -48,7 +48,7 @@ export default function Search() {
           <div
             key={user.id}
             className="p-2 border rounded cursor-pointer hover:bg-gray-100"
-            onClick={() => navigate(`/profile/${user.id}`)}
+            onClick={() => navigate(`/user/${user.id}`)}
           >
             {user.name}
           </div>

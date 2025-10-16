@@ -39,23 +39,34 @@ export default function Navbar({ onSearch }) {
 
   const handleSearch = async (e) => {
     e.preventDefault();
-    if (!searchQuery.trim()) return;
-    
+    const raw = searchQuery.trim();
+    if (!raw) return;
+
     // If onSearch prop is provided (from Profile component), use it
     if (onSearch) {
-      onSearch(searchQuery.trim());
+      onSearch(raw);
       setSearchQuery("");
       setShowSearchResults(false);
       return;
     }
-    
-    // Otherwise use the dropdown search functionality
+
+    // Otherwise use the dropdown search functionality (case-insensitive)
     try {
-      const q = query(
-        collection(db, "users"),
-        where("name", ">=", searchQuery.trim()),
-        where("name", "<=", searchQuery.trim() + "\uf8ff")
-      );
+      const term = raw.toLowerCase();
+      const isEmailLike = term.includes("@");
+
+      const q = isEmailLike
+        ? query(
+            collection(db, "users"),
+            where("emailLower", ">=", term),
+            where("emailLower", "<=", term + "\uf8ff")
+          )
+        : query(
+            collection(db, "users"),
+            where("nameLower", ">=", term),
+            where("nameLower", "<=", term + "\uf8ff")
+          );
+
       const snapshot = await getDocs(q);
       const results = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
       setSearchResults(results);
