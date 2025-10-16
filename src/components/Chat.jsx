@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
+import Navbar from './Navbar';
 import { db, auth } from '../firebase';
 import { collection, addDoc, onSnapshot, query, orderBy, where, serverTimestamp, getDocs, deleteDoc, doc } from 'firebase/firestore';
 
@@ -144,7 +145,10 @@ function Chat() {
   };
 
   return (
-    <div className="flex h-screen">
+    <div className="flex h-screen flex-col">
+      {/* Global Navbar with shared search */}
+      <Navbar />
+      <div className="flex flex-1">
       {/* Sidebar: conversations */}
       <div className="w-72 border-r bg-gray-50 p-3 overflow-y-auto">
         <div className="text-xs font-semibold text-gray-500 mb-2">Conversations</div>
@@ -235,6 +239,7 @@ function Chat() {
             </button>
           </form>
         </div>
+      </div>
       </div>
     </div>
   );

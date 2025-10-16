@@ -133,26 +133,7 @@ export default function Profile() {
     }
   };
 
-  // Search for users by name
-  const handleSearch = async (searchTerm) => {
-    if (!searchTerm.trim()) return;
-    try {
-      const q = query(
-        collection(db, "users"),
-        where("nameLower", "==", searchTerm.trim().toLowerCase())
-      );
-      const snapshot = await getDocs(q);
-      if (!snapshot.empty) {
-        const userData = { id: snapshot.docs[0].id, ...snapshot.docs[0].data() };
-        navigate(`/user/${userData.id}`);
-      } else {
-        alert("User not found");
-      }
-    } catch (error) {
-      console.error("Error searching for user:", error);
-      alert("Error searching for user");
-    }
-  };
+  // Use shared Navbar search; no local override
 
   if (!user) return null;
 
