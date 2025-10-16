@@ -10,17 +10,44 @@ export default function Search() {
   const navigate = useNavigate();
 
   const handleSearch = async () => {
-    const term = searchName.trim().toLowerCase();
+    const raw = searchName.trim();
+    const term = raw.toLowerCase();
     if (!term) return;
 
-    const q = query(
-      collection(db, "users"),
-      where("nameLower", ">=", term),
-      where("nameLower", "<=", term + "\uf8ff")
-    );
+    // Primary: case-insensitive by nameLower; emailLower when input looks like email
+    const isEmailLike = term.includes("@");
+    let q = isEmailLike
+      ? query(
+          collection(db, "users"),
+          where("emailLower", ">=", term),
+          where("emailLower", "<=", term + "\uf8ff")
+        )
+      : query(
+          collection(db, "users"),
+          where("nameLower", ">=", term),
+          where("nameLower", "<=", term + "\uf8ff")
+        );
 
-    const snapshot = await getDocs(q);
-    const users = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
+    let snapshot = await getDocs(q);
+    let users = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
+
+    // Fallbacks for legacy fields
+    if (users.length === 0 && !isEmailLike) {
+      q = query(
+        collection(db, "users"),
+        where("name", ">=", raw),
+        where("name", "<=", raw + "\uf8ff")
+      );
+      snapshot = await getDocs(q);
+      users = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
+    }
+
+    if (users.length === 0 && isEmailLike) {
+      q = query(collection(db, "users"), where("email", "==", raw));
+      snapshot = await getDocs(q);
+      users = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
+    }
+
     setResults(users);
   };
 

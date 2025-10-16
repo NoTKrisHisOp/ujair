@@ -55,7 +55,8 @@ export default function Navbar({ onSearch }) {
       const term = raw.toLowerCase();
       const isEmailLike = term.includes("@");
 
-      const q = isEmailLike
+      // Primary query: case-insensitive name or email prefix
+      let q = isEmailLike
         ? query(
             collection(db, "users"),
             where("emailLower", ">=", term),
@@ -67,8 +68,30 @@ export default function Navbar({ onSearch }) {
             where("nameLower", "<=", term + "\uf8ff")
           );
 
-      const snapshot = await getDocs(q);
-      const results = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
+      let snapshot = await getDocs(q);
+      let results = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
+
+      // Fallback 1: legacy name field (older accounts)
+      if (results.length === 0 && !isEmailLike) {
+        q = query(
+          collection(db, "users"),
+          where("name", ">=", raw),
+          where("name", "<=", raw + "\uf8ff")
+        );
+        snapshot = await getDocs(q);
+        results = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
+      }
+
+      // Fallback 2: exact email match on legacy email field
+      if (results.length === 0 && isEmailLike) {
+        q = query(
+          collection(db, "users"),
+          where("email", "==", raw)
+        );
+        snapshot = await getDocs(q);
+        results = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
+      }
+
       setSearchResults(results);
       setShowSearchResults(true);
     } catch (error) {
