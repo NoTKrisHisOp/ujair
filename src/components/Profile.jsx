@@ -29,14 +29,13 @@ export default function Profile() {
   const [showSuccessMessage, setShowSuccessMessage] = useState(false);
   const navigate = useNavigate();
 
-  // Check auth
+  // Observe auth and set local user; routing guard handled in App.jsx
   useEffect(() => {
     const unsubscribe = auth.onAuthStateChanged((currentUser) => {
-      if (currentUser) setUser(currentUser);
-      else navigate("/login");
+      setUser(currentUser || null);
     });
     return () => unsubscribe();
-  }, [navigate]);
+  }, []);
 
   // Fetch user notes
   const fetchNotes = async () => {
